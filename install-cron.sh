@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安装每天凌晨 1:00（服务器本地时区）的 cron 任务
+# 安装每天凌晨 1:30（服务器本地时区）的 cron 任务
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -7,22 +7,19 @@ RUN_SH="$SCRIPT_DIR/run.sh"
 
 chmod +x "$RUN_SH"
 
-CRON_LINE="0 1 * * * $RUN_SH"
+CRON_LINE="30 1 * * * $RUN_SH"
 MARKER="# skland-checkin"
 
 EXISTING="$(crontab -l 2>/dev/null || true)"
-if echo "$EXISTING" | grep -qF "$MARKER"; then
-  echo "已存在定时任务，跳过安装。"
-  echo "$EXISTING" | grep -F "$MARKER" || true
-  exit 0
-fi
+# 移除旧的 skland-checkin 任务（若存在）
+FILTERED="$(echo "$EXISTING" | grep -vF "$MARKER" | sed '/^$/d' || true)"
 
 {
-  echo "$EXISTING" | sed '/^$/d'
+  echo "$FILTERED"
   echo "$CRON_LINE $MARKER"
 } | crontab -
 
-echo "已添加 cron：每天 01:00 执行"
+echo "已设置 cron：每天 01:30 执行"
 echo "  $CRON_LINE $MARKER"
 echo ""
 echo "当前 crontab："
