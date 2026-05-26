@@ -1,5 +1,7 @@
 # 森空岛自动签到（明日方舟 + 终末地）
 
+仓库地址：https://github.com/kydzhou/skdcheckin
+
 在 Linux / 阿里云 ECS 上每天定时为 **明日方舟** 与 **明日方舟：终末地** 执行森空岛签到。
 
 基于 [devnakx/skyland_auto_checkin](https://github.com/devnakx/skyland_auto_checkin) 改编，**无需青龙面板**，使用 `cron` + Python 即可。
@@ -43,11 +45,11 @@ sudo apt install -y python3 python3-venv python3-pip git
 scp -r "D:\Cursor Project\skd checkin" root@你的ECS公网IP:/opt/skland-checkin
 ```
 
-**方式 B：在 ECS 上用 git（若你已推到 GitHub）**
+**方式 B：在 ECS 上 git clone（推荐）**
 
 ```bash
 sudo mkdir -p /opt/skland-checkin
-sudo git clone <你的仓库地址> /opt/skland-checkin
+sudo git clone https://github.com/kydzhou/skdcheckin.git /opt/skland-checkin
 ```
 
 **方式 C：在 ECS 上手动打包上传后解压到 `/opt/skland-checkin`**
