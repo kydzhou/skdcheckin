@@ -75,6 +75,21 @@ SKYLAND_TOKEN=这里粘贴你的token
 SKYLAND_NOTIFY=false
 ```
 
+需要飞书通知（推荐）：
+
+1. 飞书里新建一个群（可只有你自己）
+2. 群设置 → 群机器人 → 添加自定义机器人
+3. 复制 Webhook 地址；若开启签名校验，同时复制 Secret
+
+```env
+SKYLAND_NOTIFY=true
+FEISHU_WEBHOOK=https://open.feishu.cn/open-apis/bot/v2/hook/你的hook
+FEISHU_SECRET=你的签名密钥
+FEISHU_NOTIFY_SUCCESS_ONLY=true
+```
+
+默认仅在存在「签到成功」或「今日已签到」时推送飞书消息。
+
 需要微信/邮件推送时（[Server 酱](https://sct.ftqq.com/)）：
 
 ```env

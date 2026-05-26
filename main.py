@@ -4,6 +4,7 @@
 森空岛自动签到：明日方舟 + 明日方舟：终末地
 基于 https://github.com/devnakx/skyland_auto_checkin 改编，可独立运行于 Linux / ECS
 """
+import base64
 import hashlib
 import hmac
 import json
@@ -64,10 +65,25 @@ def load_dotenv(path: Path) -> None:
 
 
 class Config:
-    def __init__(self, tokens=None, enable_notify=False, serverchan_key=""):
+    def __init__(
+        self,
+        tokens=None,
+        enable_notify=False,
+        serverchan_key="",
+        feishu_webhook="",
+        feishu_secret="",
+        notify_success_only=True,
+    ):
         self.tokens = tokens if tokens is not None else []
         self.enable_notify = enable_notify
         self.serverchan_key = serverchan_key
+        self.feishu_webhook = feishu_webhook
+        self.feishu_secret = feishu_secret
+        self.notify_success_only = notify_success_only
+
+    @property
+    def has_notify_channel(self) -> bool:
+        return bool(self.serverchan_key or self.feishu_webhook)
 
     @classmethod
     def from_env(cls):
@@ -76,10 +92,17 @@ class Config:
         tokens = [t.strip() for t in tokens_env.split(";") if t.strip()]
         enable_notify = notify_env.strip().lower() in ("true", "1", "yes")
         serverchan_key = os.getenv("SERVERCHAN_SENDKEY", "").strip()
+        feishu_webhook = os.getenv("FEISHU_WEBHOOK", "").strip()
+        feishu_secret = os.getenv("FEISHU_SECRET", "").strip()
+        success_only_env = os.getenv("FEISHU_NOTIFY_SUCCESS_ONLY", "true").strip().lower()
+        notify_success_only = success_only_env not in ("false", "0", "no")
         return cls(
             tokens=tokens,
             enable_notify=enable_notify,
             serverchan_key=serverchan_key,
+            feishu_webhook=feishu_webhook,
+            feishu_secret=feishu_secret,
+            notify_success_only=notify_success_only,
         )
 
 
@@ -99,21 +122,98 @@ def create_session():
     return session
 
 
-def send_notify(title: str, content: str, config: Config) -> None:
-    if not config.enable_notify or not config.serverchan_key:
-        return
+def _normalize_notify_content(content: str) -> str:
+    return re.sub(r"[\t ]+", " ", content).strip()
+
+
+def _line_is_checkin_success(line: str) -> bool:
+    if "签到失败" in line or "无法签到" in line or "未绑定角色" in line:
+        return False
+    return "成功" in line or "今日已签到" in line
+
+
+def filter_success_content(content: str) -> str:
+    """仅保留签到成功相关的日志行"""
+    kept: list[str] = []
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("=====") or _line_is_checkin_success(stripped):
+            kept.append(stripped)
+    return "\n".join(kept)
+
+
+def has_checkin_success(content: str) -> bool:
+    return any(_line_is_checkin_success(line) for line in content.splitlines())
+
+
+def send_feishu(title: str, content: str, config: Config) -> None:
+    import requests
+
+    text = f"{title}\n\n{content}" if content else title
+    payload: dict = {
+        "msg_type": "text",
+        "content": {"text": text},
+    }
+    if config.feishu_secret:
+        timestamp = str(int(time.time()))
+        string_to_sign = f"{timestamp}\n{config.feishu_secret}"
+        sign = base64.b64encode(
+            hmac.new(
+                string_to_sign.encode("utf-8"),
+                b"",
+                digestmod=hashlib.sha256,
+            ).digest()
+        ).decode("utf-8")
+        payload["timestamp"] = timestamp
+        payload["sign"] = sign
+
+    resp = requests.post(
+        config.feishu_webhook,
+        json=payload,
+        timeout=REQUEST_TIMEOUT,
+    )
+    data = resp.json()
+    if data.get("code") not in (0, None) and data.get("StatusCode") not in (0, None):
+        raise Exception(data.get("msg") or data.get("StatusMessage") or resp.text)
+
+
+def send_serverchan(title: str, content: str, config: Config) -> None:
     import requests
 
     url = f"https://sctapi.ftqq.com/{config.serverchan_key}.send"
-    plain = re.sub(r"[\t ]+", " ", content)
-    try:
-        requests.post(
-            url,
-            data={"title": title, "desp": plain},
-            timeout=REQUEST_TIMEOUT,
-        )
-    except Exception as exc:
-        print(f"[通知] 推送失败: {exc}", file=sys.stderr)
+    requests.post(
+        url,
+        data={"title": title, "desp": content},
+        timeout=REQUEST_TIMEOUT,
+    )
+
+
+def send_notify(title: str, content: str, config: Config) -> None:
+    if not config.enable_notify or not config.has_notify_channel:
+        return
+
+    body = _normalize_notify_content(content)
+    if config.notify_success_only and config.feishu_webhook:
+        if not has_checkin_success(body):
+            print("[通知] 无签到成功记录，跳过飞书推送", file=sys.stderr)
+            return
+        body = filter_success_content(body) or body
+
+    if config.feishu_webhook:
+        try:
+            send_feishu(title, body, config)
+            print("[通知] 飞书推送成功")
+        except Exception as exc:
+            print(f"[通知] 飞书推送失败: {exc}", file=sys.stderr)
+
+    if config.serverchan_key:
+        try:
+            send_serverchan(title, body, config)
+            print("[通知] Server 酱推送成功")
+        except Exception as exc:
+            print(f"[通知] Server 酱推送失败: {exc}", file=sys.stderr)
 
 
 def _get_display_width(string: str) -> int:
